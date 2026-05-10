@@ -20,6 +20,7 @@ interface ChannelState {
   isPlaying: boolean;
   eq: { high: number; mid: number; low: number };
   type: ChannelType;
+  retryCount: number;
 }
 
 // ─── Audio Utility ───────────────────────────────────────────────────────────
@@ -321,6 +322,7 @@ export default function AmbientMachine() {
       isPlaying: false,
       eq: { high: 0, mid: 0, low: 0 },
       type: (i < 4 ? "field" : i < 6 ? "drone" : i === 6 ? "mystery" : "radio") as ChannelType,
+      retryCount: 0,
     }))
   );
 
@@ -670,7 +672,7 @@ export default function AmbientMachine() {
 
       setChannels(prev => {
         const next = [...prev];
-        next[index] = { ...next[index], audioUrl: result.url, title: result.title, isLoading: false, isPlaying: true, volume: 0.0 };
+        next[index] = { ...next[index], audioUrl: result.url, title: result.title, isLoading: false, isPlaying: true, volume: 0.0, retryCount: 0 };
         return next;
       });
     } catch (error) {
@@ -861,12 +863,23 @@ export default function AmbientMachine() {
                     crossOrigin="anonymous"
                     className="hidden"
                     onError={() => {
-                      console.warn(`Audio failed to load on T${i + 1}: ${ch.audioUrl}`);
-                      setChannels(prev => {
-                        const next = [...prev];
-                        next[i] = { ...next[i], title: "LOAD ERROR — RETRY", isPlaying: false };
-                        return next;
-                      });
+                      const retries = channels[i]?.retryCount || 0;
+                      if (retries < 3) {
+                        console.warn(`Audio failed on T${i + 1}, auto-retry ${retries + 1}/3...`);
+                        setChannels(prev => {
+                          const next = [...prev];
+                          next[i] = { ...next[i], retryCount: retries + 1 };
+                          return next;
+                        });
+                        fetchRandomRecording(i);
+                      } else {
+                        console.warn(`Audio failed on T${i + 1} after 3 retries`);
+                        setChannels(prev => {
+                          const next = [...prev];
+                          next[i] = { ...next[i], title: "ERROR — TAP DICE", isPlaying: false, retryCount: 0 };
+                          return next;
+                        });
+                      }
                     }}
                   />
                 )}
@@ -917,24 +930,21 @@ export default function AmbientMachine() {
                 }}>
                 <div className="absolute inset-0 scanlines opacity-40" />
                 <div className="relative z-10" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
-                  {channels.some(c => c.isLoading) ? (
-                    <span className="text-[9px] text-orange-500 rec-blink block">
-                      {" >> SEARCHING ARCHIVE..."}
-                    </span>
-                  ) : (
-                    <div className="space-y-[2px]">
-                      {channels.map((ch, idx) => ch.audioUrl ? (
-                        <div key={idx} className="flex gap-1.5 text-[8px] whitespace-nowrap overflow-hidden fade-up"
-                          style={{ animationDelay: `${idx * 30}ms` }}>
-                          <span style={{ color: COLORS[ch.type], opacity: 0.6 }}>T{idx + 1}:</span>
+                  <div className="space-y-[2px]">
+                    {channels.map((ch, idx) => (
+                      <div key={idx} className="flex gap-1.5 text-[8px] whitespace-nowrap overflow-hidden"
+                        style={{ height: 12, lineHeight: "12px" }}>
+                        <span style={{ color: COLORS[ch.type], opacity: 0.6, flexShrink: 0 }}>T{idx + 1}:</span>
+                        {ch.isLoading ? (
+                          <span className="rec-blink" style={{ color: "#ff6b35" }}>SEARCHING...</span>
+                        ) : ch.audioUrl ? (
                           <span className="truncate" style={{ color: "#00ffcc" }}>{ch.title}</span>
-                        </div>
-                      ) : null)}
-                      {!channels.some(c => c.audioUrl) && (
-                        <span className="text-[9px] tracking-[0.25em]" style={{ color: "#222" }}>SYSTEM READY</span>
-                      )}
-                    </div>
-                  )}
+                        ) : (
+                          <span style={{ color: "#222" }}>—</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
 
