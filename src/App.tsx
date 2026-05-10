@@ -366,12 +366,12 @@ export default function AmbientMachine() {
     reverbGain.gain.value = 0;
     dryGain.gain.value = 1;
 
-    // Wow
-    const wowDelay = ctx.createDelay();
-    wowDelay.delayTime.value = 0.01;
+    // Wow - slow pitch warble (Chase Bliss Generation Loss style)
+    const wowDelay = ctx.createDelay(1);
+    wowDelay.delayTime.value = 0.03;
     const wowLFO = ctx.createOscillator();
     const wowDepth = ctx.createGain();
-    wowLFO.frequency.value = 0.4;
+    wowLFO.frequency.value = 0.5;
     wowDepth.gain.value = 0;
     wowLFO.connect(wowDepth);
     wowDepth.connect(wowDelay.delayTime);
@@ -422,9 +422,9 @@ export default function AmbientMachine() {
           nodes.dryGain.gain.setTargetAtTime(1 - updates.reverb * 0.5, t, 0.1);
         }
         if (updates.wow !== undefined && wowDepthRef.current)
-          wowDepthRef.current.gain.setTargetAtTime(updates.wow * 0.005, t, 0.1);
+          wowDepthRef.current.gain.setTargetAtTime(updates.wow * 0.025, t, 0.1);
         if (updates.flutter !== undefined && flutterDepthRef.current)
-          flutterDepthRef.current.gain.setTargetAtTime(updates.flutter * 0.002, t, 0.1);
+          flutterDepthRef.current.gain.setTargetAtTime(updates.flutter * 0.003, t, 0.1);
       }
       return next;
     });
@@ -456,6 +456,19 @@ export default function AmbientMachine() {
     if (!ctx || !effects) return;
     if (channelNodesRef.current[index]?.source.mediaElement === element) return;
 
+    // Disconnect old nodes if they exist
+    const oldNodes = channelNodesRef.current[index];
+    if (oldNodes) {
+      try {
+        oldNodes.analyser.disconnect();
+        oldNodes.gain.disconnect();
+        oldNodes.eqHigh.disconnect();
+        oldNodes.eqMid.disconnect();
+        oldNodes.eqLow.disconnect();
+        oldNodes.source.disconnect();
+      } catch (e) { /* already disconnected */ }
+    }
+
     const source = ctx.createMediaElementSource(element);
     const gain = ctx.createGain();
     const analyser = ctx.createAnalyser();
@@ -480,26 +493,86 @@ export default function AmbientMachine() {
     element.play().catch(() => {});
   }, []);
 
+  // ─── Animated Fader Fade-Out ──────────────────────────────────────
+  const animateFadeOut = useCallback((index: number, duration: number): Promise<void> => {
+    return new Promise((resolve) => {
+      const startVolume = channels[index].volume;
+      if (startVolume <= 0) { resolve(); return; }
+      const nodes = channelNodesRef.current[index];
+      const ctx = audioContextRef.current;
+      if (!nodes || !ctx) { resolve(); return; }
+
+      // Schedule the audio gain fade
+      const now = ctx.currentTime;
+      nodes.gain.gain.cancelScheduledValues(now);
+      nodes.gain.gain.setValueAtTime(nodes.gain.gain.value, now);
+      nodes.gain.gain.linearRampToValueAtTime(0, now + duration);
+      nodes.eqLow.gain.setTargetAtTime(0, now, duration / 3);
+      nodes.eqMid.gain.setTargetAtTime(0, now, duration / 3);
+      nodes.eqHigh.gain.setTargetAtTime(0, now, duration / 3);
+
+      // Animate the UI fader position
+      const startTime = performance.now();
+      const durationMs = duration * 1000;
+      const animate = (now: number) => {
+        const elapsed = now - startTime;
+        const progress = Math.min(elapsed / durationMs, 1);
+        const currentVolume = startVolume * (1 - progress);
+
+        setChannels(prev => {
+          const next = [...prev];
+          next[index] = { ...next[index], volume: currentVolume };
+          return next;
+        });
+
+        if (progress < 1) {
+          requestAnimationFrame(animate);
+        } else {
+          setChannels(prev => {
+            const next = [...prev];
+            next[index] = { ...next[index], volume: 0, eq: { high: 0, mid: 0, low: 0 } };
+            return next;
+          });
+          resolve();
+        }
+      };
+      requestAnimationFrame(animate);
+    });
+  }, [channels]);
+
+  // ─── Fade Out All Channels ──────────────────────────────────────────
+  const fadeOutAllChannels = useCallback((): Promise<void> => {
+    const activeChannels = channels
+      .map((ch, i) => ({ ch, i }))
+      .filter(({ ch }) => ch.isPlaying && ch.volume > 0);
+
+    if (activeChannels.length === 0) return Promise.resolve();
+
+    return Promise.all(
+      activeChannels.map(({ i }) => animateFadeOut(i, fadeTime))
+    ).then(() => {});
+  }, [channels, fadeTime, animateFadeOut]);
+
   // ─── Fetch Random Recording ─────────────────────────────────────────
   const fetchRandomRecording = useCallback(async (index: number) => {
     if (audioContextRef.current?.state === "suspended") audioContextRef.current.resume();
 
     const type = channels[index].type;
-    const nodes = channelNodesRef.current[index];
-    const now = audioContextRef.current?.currentTime || 0;
 
-    // Fade out
-    if (nodes && audioContextRef.current) {
-      nodes.gain.gain.cancelScheduledValues(now);
-      nodes.gain.gain.exponentialRampToValueAtTime(0.0001, now + fadeTime);
-      nodes.eqLow.gain.setTargetAtTime(0, now, fadeTime / 2);
-      nodes.eqMid.gain.setTargetAtTime(0, now, fadeTime / 2);
-      nodes.eqHigh.gain.setTargetAtTime(0, now, fadeTime / 2);
+    // Animated fade out of the current track
+    const hasCurrent = channels[index].isPlaying && channels[index].volume > 0;
+    if (hasCurrent) {
+      setChannels(prev => {
+        const next = [...prev];
+        next[index] = { ...next[index], title: "FADING OUT..." };
+        return next;
+      });
+      await animateFadeOut(index, fadeTime);
     }
 
     setChannels(prev => {
       const next = [...prev];
-      next[index] = { ...next[index], isLoading: true, title: "FADING OUT...", volume: 0, eq: { high: 0, mid: 0, low: 0 } };
+      next[index] = { ...next[index], isLoading: true, title: "SEARCHING...", volume: 0, eq: { high: 0, mid: 0, low: 0 } };
       return next;
     });
 
@@ -543,10 +616,7 @@ export default function AmbientMachine() {
     })();
 
     try {
-      const [result] = await Promise.all([
-        fetchPromise,
-        new Promise(resolve => setTimeout(resolve, fadeTime * 1000)),
-      ]);
+      const result = await fetchPromise;
 
       if (isRecording) {
         const timestamp = formatTime(recordingTime);
@@ -569,9 +639,24 @@ export default function AmbientMachine() {
         return next;
       });
     }
-  }, [channels, fadeTime, isRecording, recordingTime]);
+  }, [channels, fadeTime, isRecording, recordingTime, animateFadeOut]);
 
   // ─── Transport Controls ─────────────────────────────────────────────
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60).toString().padStart(2, "0");
+    const s = (seconds % 60).toString().padStart(2, "0");
+    return `${m}:${s}`;
+  };
+
+  const stopRecording = useCallback(() => {
+    if (recorderRef.current && recorderRef.current.state !== "inactive") {
+      sessionLogsRef.current.push({ time: formatTime(recordingTime), action: "Recording Stopped" });
+      recorderRef.current.stop();
+    }
+    setIsRecording(false);
+    if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+  }, [recordingTime]);
+
   const playAll = useCallback(() => {
     if (audioContextRef.current?.state === "suspended") audioContextRef.current.resume();
     channels.forEach((ch, i) => {
@@ -583,16 +668,18 @@ export default function AmbientMachine() {
     });
   }, [channels, updateChannel]);
 
-  const stopAll = useCallback(() => {
+  const stopAll = useCallback(async () => {
+    // Fade out all channels with animated faders, then pause
+    await fadeOutAllChannels();
     channels.forEach((ch, i) => {
       const audio = audioElementsRef.current[i];
       if (audio && ch.isPlaying) {
         audio.pause();
-        updateChannel(i, { isPlaying: false });
       }
     });
+    setChannels(prev => prev.map(ch => ({ ...ch, isPlaying: false, volume: 0 })));
     if (isRecording) stopRecording();
-  }, [channels, updateChannel, isRecording]);
+  }, [channels, isRecording, fadeOutAllChannels, stopRecording]);
 
   const startRecording = useCallback(() => {
     if (!audioContextRef.current || isRecording) return;
@@ -643,21 +730,6 @@ export default function AmbientMachine() {
     setRecordingTime(0);
     timerIntervalRef.current = window.setInterval(() => setRecordingTime(prev => prev + 1), 1000);
   }, [isRecording, channels]);
-
-  const stopRecording = useCallback(() => {
-    if (recorderRef.current && recorderRef.current.state !== "inactive") {
-      sessionLogsRef.current.push({ time: formatTime(recordingTime), action: "Recording Stopped" });
-      recorderRef.current.stop();
-    }
-    setIsRecording(false);
-    if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
-  }, [recordingTime]);
-
-  const formatTime = (seconds: number) => {
-    const m = Math.floor(seconds / 60).toString().padStart(2, "0");
-    const s = (seconds % 60).toString().padStart(2, "0");
-    return `${m}:${s}`;
-  };
 
   const anyPlaying = channels.some(c => c.isPlaying);
 
