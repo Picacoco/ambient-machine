@@ -593,7 +593,7 @@ export default function AmbientMachine() {
       const docs = data.response?.docs;
       if (!docs || docs.length === 0) throw new Error("No docs");
 
-      // Shuffle docs to avoid hitting the same broken ones
+      // Shuffle docs to avoid hitting the same ones
       const shuffled = [...docs].sort(() => Math.random() - 0.5);
 
       for (let attempt = 0; attempt < Math.min(shuffled.length, 10); attempt++) {
@@ -621,14 +621,29 @@ export default function AmbientMachine() {
 
           const audioUrl = `https://archive.org/download/${randomDoc.identifier}/${encodeURIComponent(audioFile.name)}`;
 
-          // Validate the file is actually accessible (CORS check)
-          try {
-            const headResponse = await fetch(audioUrl, { method: "HEAD", mode: "cors" });
-            if (!headResponse.ok) continue;
-          } catch {
-            // CORS blocked — skip this file
-            continue;
-          }
+          // Validate by actually trying to load the audio
+          const canPlay = await new Promise<boolean>((resolve) => {
+            const testAudio = new Audio();
+            testAudio.crossOrigin = "anonymous";
+            testAudio.preload = "metadata";
+            const cleanup = () => {
+              testAudio.removeEventListener("canplaythrough", onSuccess);
+              testAudio.removeEventListener("loadedmetadata", onSuccess);
+              testAudio.removeEventListener("error", onError);
+              clearTimeout(timer);
+              testAudio.src = "";
+            };
+            const onSuccess = () => { cleanup(); resolve(true); };
+            const onError = () => { cleanup(); resolve(false); };
+            const timer = setTimeout(() => { cleanup(); resolve(false); }, 8000);
+            testAudio.addEventListener("canplaythrough", onSuccess);
+            testAudio.addEventListener("loadedmetadata", onSuccess);
+            testAudio.addEventListener("error", onError);
+            testAudio.src = audioUrl;
+            testAudio.load();
+          });
+
+          if (!canPlay) continue;
 
           return {
             url: audioUrl,
