@@ -207,16 +207,16 @@ function ChannelStrip({ ch, index, onDice, onVolumeChange, onEQChange }: {
 
   return (
     <div className="flex-1 min-w-[90px] flex flex-col items-center pt-3 pb-6 gap-3 relative"
-      style={{ background: "linear-gradient(180deg, #1c1c1c 0%, #181818 100%)" }}>
+      style={{ background: "linear-gradient(180deg, #1c1c1c 0%, #181818 100%)", minHeight: 560 }}>
 
       {/* Channel label */}
-      <div className="text-[9px] font-bold tracking-[0.15em] uppercase" style={{ color, fontFamily: "'JetBrains Mono', monospace" }}>
+      <div className="text-[9px] font-bold tracking-[0.15em] uppercase" style={{ color, fontFamily: "'JetBrains Mono', monospace", height: 14, lineHeight: "14px" }}>
         {label}
       </div>
 
       {/* Title display */}
-      <div className="w-full px-2">
-        <div className="bg-[#0a0a0a] rounded px-1.5 py-1 text-center border border-[#1a1a1a] relative overflow-hidden"
+      <div className="w-full px-2" style={{ height: 22, flexShrink: 0 }}>
+        <div className="bg-[#0a0a0a] rounded px-1.5 py-1 text-center border border-[#1a1a1a] relative overflow-hidden h-full flex items-center justify-center"
           style={{ boxShadow: "inset 0 1px 4px rgba(0,0,0,0.5)" }}>
           {ch.isLoading && <div className="absolute inset-0 loading-shimmer" />}
           <span className="text-[7px] font-mono block truncate"
@@ -506,13 +506,13 @@ export default function AmbientMachine() {
     const fetchPromise = (async () => {
       let searchQuery = "";
       if (type === "field")
-        searchQuery = '(subject:"field recording" OR subject:"soundscape" OR subject:"found sound" OR subject:"musique concrete" OR subject:"acoustic ecology" OR subject:"nature sounds" OR subject:"urban sounds" OR subject:"underwater recording" OR subject:"bioacoustics" OR subject:"dawn chorus" OR subject:"rain recording" OR subject:"thunder" OR subject:"wind recording" OR subject:"ocean waves" OR subject:"forest sounds" OR subject:"industrial sounds" OR subject:"city ambience" OR subject:"train sounds" OR subject:"market sounds") AND mediatype:audio AND -subject:podcast AND -subject:radio AND -subject:talk AND -subject:music AND -subject:song AND -subject:lecture';
+        searchQuery = '(subject:"field recording" OR subject:"soundscape" OR subject:"found sound" OR subject:"musique concrete" OR subject:"acoustic ecology" OR subject:"nature sounds" OR subject:"urban sounds" OR subject:"underwater recording" OR subject:"bioacoustics" OR subject:"dawn chorus" OR subject:"rain recording" OR subject:"thunder" OR subject:"wind recording" OR subject:"ocean waves" OR subject:"forest sounds" OR subject:"industrial sounds" OR subject:"city ambience" OR subject:"train sounds" OR subject:"market sounds") AND mediatype:audio AND -subject:podcast AND -subject:radio AND -subject:talk AND -subject:music AND -subject:song AND -subject:lecture AND -subject:broadcast AND -subject:"radio program" AND -title:radio AND -title:broadcast';
       else if (type === "drone")
         searchQuery = '(subject:"drone music" OR subject:"ambient drone" OR subject:"modular synth" OR subject:"harmonium" OR subject:"pipe organ" OR subject:"resonance" OR subject:"room tone" OR subject:"singing bowl" OR subject:"overtone" OR subject:"tanpura" OR subject:"didgeridoo" OR subject:"shruti box" OR subject:"tape loop" OR subject:"feedback" OR subject:"noise music" OR subject:"dark ambient" OR subject:"deep listening" OR subject:"meditation drone" OR subject:"sustained tones" OR subject:"spectral music") AND mediatype:audio AND -subject:podcast AND -subject:radio AND -subject:interview AND -subject:host AND -subject:vocals AND -subject:"spoken word" AND -subject:lecture';
       else if (type === "mystery")
         searchQuery = '(subject:"shortwave radio" OR subject:"satellite transmissions" OR subject:"numbers station" OR subject:"space sound" OR subject:"telemetry" OR subject:"vlf recording" OR subject:"electromagnetic recording" OR subject:"EVP" OR subject:"radio interference" OR subject:"morse code" OR subject:"sonar" OR subject:"hydrophone" OR subject:"seismograph sonification" OR subject:"aurora sounds" OR subject:"jupiter recording" OR subject:"magnetosphere" OR subject:"ionosphere" OR subject:"cosmic noise" OR subject:"static noise") AND mediatype:audio AND -subject:podcast AND -subject:talk AND -subject:documentary AND -subject:explanation';
       else
-        searchQuery = '(subject:"am radio" OR subject:"radio broadcast" OR subject:"old time radio" OR subject:"cb radio" OR subject:"scanner" OR subject:"radio static" OR subject:"radio tuning" OR subject:"pirate radio" OR subject:"emergency broadcast" OR subject:"weather radio" OR subject:"aviation radio" OR subject:"ham radio" OR subject:"medium wave" OR subject:"longwave radio" OR subject:"radio noise" OR subject:"broadcast test" OR subject:"station identification") AND mediatype:audio AND -subject:comedy AND -subject:drama AND -subject:news AND -subject:story AND -subject:episode';
+        searchQuery = '(subject:"am radio" OR subject:"radio broadcast" OR subject:"old time radio" OR subject:"cb radio" OR subject:"scanner" OR subject:"radio static" OR subject:"radio tuning" OR subject:"pirate radio" OR subject:"emergency broadcast" OR subject:"weather radio" OR subject:"aviation radio" OR subject:"ham radio" OR subject:"medium wave" OR subject:"longwave radio" OR subject:"radio noise" OR subject:"broadcast test" OR subject:"station identification") AND mediatype:audio AND -subject:comedy AND -subject:drama AND -subject:news AND -subject:story AND -subject:episode AND -subject:music AND -subject:song AND -subject:concert AND -subject:"music program" AND -subject:dj';
 
       const searchUrl = `https://archive.org/advancedsearch.php?q=${encodeURIComponent(searchQuery)}&fl[]=identifier,title&rows=150&page=${Math.floor(Math.random() * 40) + 1}&output=json`;
       const response = await fetch(searchUrl);
@@ -524,9 +524,13 @@ export default function AmbientMachine() {
         const randomDoc = docs[Math.floor(Math.random() * docs.length)];
         const itemResponse = await fetch(`https://archive.org/metadata/${randomDoc.identifier}`);
         const itemData = await itemResponse.json();
-        const audioFile = itemData.files?.find((f: any) =>
-          f.format === "VBR MP3" || f.format === "MP3" || f.name?.toLowerCase().endsWith(".mp3")
+        const audioFiles = (itemData.files || []).filter((f: any) =>
+          (f.format === "VBR MP3" || f.format === "MP3" || f.name?.toLowerCase().endsWith(".mp3"))
+          && parseFloat(f.size || "0") > 500000
         );
+        const audioFile = audioFiles.length > 0
+          ? audioFiles.reduce((best: any, f: any) => parseFloat(f.size || "0") > parseFloat(best.size || "0") ? f : best)
+          : null;
         if (audioFile) {
           return {
             url: `https://archive.org/download/${randomDoc.identifier}/${audioFile.name}`,
@@ -886,9 +890,9 @@ export default function AmbientMachine() {
               </div>
 
               {/* Footer */}
-              <div className="mt-6 pt-3 opacity-20" style={{ borderTop: "1px solid #222" }}>
+              <div className="mt-6 pt-3 opacity-50" style={{ borderTop: "1px solid #333" }}>
                 <div className="text-[7px] leading-relaxed tracking-[0.15em] uppercase"
-                  style={{ color: "#555", fontFamily: "'JetBrains Mono', monospace" }}>
+                  style={{ color: "#777", fontFamily: "'JetBrains Mono', monospace" }}>
                   8-Track Magnetic Composition Tool
                   <br />
                   archive.org remote collection active
