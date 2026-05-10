@@ -579,40 +579,67 @@ export default function AmbientMachine() {
     const fetchPromise = (async () => {
       let searchQuery = "";
       if (type === "field")
-        searchQuery = '(subject:"field recording" OR subject:"soundscape" OR subject:"found sound" OR subject:"musique concrete" OR subject:"acoustic ecology" OR subject:"nature sounds" OR subject:"urban sounds" OR subject:"underwater recording" OR subject:"bioacoustics" OR subject:"dawn chorus" OR subject:"rain recording" OR subject:"thunder" OR subject:"wind recording" OR subject:"ocean waves" OR subject:"forest sounds" OR subject:"industrial sounds" OR subject:"city ambience" OR subject:"train sounds" OR subject:"market sounds") AND mediatype:audio AND -subject:podcast AND -subject:radio AND -subject:talk AND -subject:music AND -subject:song AND -subject:lecture AND -subject:broadcast AND -subject:"radio program" AND -title:radio AND -title:broadcast';
+        searchQuery = '(subject:"field recording" OR subject:"soundscape" OR subject:"found sound" OR subject:"musique concrete" OR subject:"acoustic ecology" OR subject:"nature sounds" OR subject:"urban sounds" OR subject:"underwater recording" OR subject:"bioacoustics" OR subject:"dawn chorus" OR subject:"rain recording" OR subject:"thunder" OR subject:"wind recording" OR subject:"ocean waves" OR subject:"forest sounds" OR subject:"industrial sounds" OR subject:"city ambience" OR subject:"train sounds" OR subject:"market sounds") AND mediatype:audio AND -subject:podcast AND -subject:radio AND -subject:talk AND -subject:music AND -subject:song AND -subject:lecture AND -subject:broadcast AND -subject:"radio program" AND -subject:sermon AND -subject:speech AND -subject:interview AND -subject:conference AND -subject:panel AND -title:radio AND -title:broadcast AND -title:sermon AND -title:lecture AND -title:interview AND -title:podcast AND -title:episode';
       else if (type === "drone")
-        searchQuery = '(subject:"drone music" OR subject:"ambient drone" OR subject:"modular synth" OR subject:"harmonium" OR subject:"pipe organ" OR subject:"resonance" OR subject:"room tone" OR subject:"singing bowl" OR subject:"overtone" OR subject:"tanpura" OR subject:"didgeridoo" OR subject:"shruti box" OR subject:"tape loop" OR subject:"feedback" OR subject:"noise music" OR subject:"dark ambient" OR subject:"deep listening" OR subject:"meditation drone" OR subject:"sustained tones" OR subject:"spectral music") AND mediatype:audio AND -subject:podcast AND -subject:radio AND -subject:interview AND -subject:host AND -subject:vocals AND -subject:"spoken word" AND -subject:lecture';
+        searchQuery = '(subject:"drone music" OR subject:"ambient drone" OR subject:"modular synth" OR subject:"harmonium" OR subject:"pipe organ" OR subject:"resonance" OR subject:"room tone" OR subject:"singing bowl" OR subject:"overtone" OR subject:"tanpura" OR subject:"didgeridoo" OR subject:"shruti box" OR subject:"tape loop" OR subject:"feedback" OR subject:"noise music" OR subject:"dark ambient" OR subject:"deep listening" OR subject:"meditation drone" OR subject:"sustained tones" OR subject:"spectral music") AND mediatype:audio AND -subject:podcast AND -subject:radio AND -subject:interview AND -subject:host AND -subject:vocals AND -subject:"spoken word" AND -subject:lecture AND -subject:panel AND -subject:conference AND -title:podcast AND -title:interview AND -title:episode AND -title:lecture';
       else if (type === "mystery")
-        searchQuery = '(subject:"shortwave radio" OR subject:"satellite transmissions" OR subject:"numbers station" OR subject:"space sound" OR subject:"telemetry" OR subject:"vlf recording" OR subject:"electromagnetic recording" OR subject:"EVP" OR subject:"radio interference" OR subject:"morse code" OR subject:"sonar" OR subject:"hydrophone" OR subject:"seismograph sonification" OR subject:"aurora sounds" OR subject:"jupiter recording" OR subject:"magnetosphere" OR subject:"ionosphere" OR subject:"cosmic noise" OR subject:"static noise") AND mediatype:audio AND -subject:podcast AND -subject:talk AND -subject:documentary AND -subject:explanation';
+        searchQuery = '(subject:"shortwave radio" OR subject:"satellite transmissions" OR subject:"numbers station" OR subject:"space sound" OR subject:"telemetry" OR subject:"vlf recording" OR subject:"electromagnetic recording" OR subject:"EVP" OR subject:"radio interference" OR subject:"morse code" OR subject:"sonar" OR subject:"hydrophone" OR subject:"seismograph sonification" OR subject:"aurora sounds" OR subject:"jupiter recording" OR subject:"magnetosphere" OR subject:"ionosphere" OR subject:"cosmic noise" OR subject:"static noise") AND mediatype:audio AND -subject:podcast AND -subject:talk AND -subject:documentary AND -subject:explanation AND -subject:interview AND -title:podcast AND -title:interview AND -title:documentary';
       else
-        searchQuery = '(subject:"am radio" OR subject:"radio broadcast" OR subject:"old time radio" OR subject:"cb radio" OR subject:"scanner" OR subject:"radio static" OR subject:"radio tuning" OR subject:"pirate radio" OR subject:"emergency broadcast" OR subject:"weather radio" OR subject:"aviation radio" OR subject:"ham radio" OR subject:"medium wave" OR subject:"longwave radio" OR subject:"radio noise" OR subject:"broadcast test" OR subject:"station identification") AND mediatype:audio AND -subject:comedy AND -subject:drama AND -subject:news AND -subject:story AND -subject:episode AND -subject:music AND -subject:song AND -subject:concert AND -subject:"music program" AND -subject:dj';
+        searchQuery = '(subject:"am radio" OR subject:"radio broadcast" OR subject:"old time radio" OR subject:"cb radio" OR subject:"scanner" OR subject:"radio static" OR subject:"radio tuning" OR subject:"pirate radio" OR subject:"emergency broadcast" OR subject:"weather radio" OR subject:"aviation radio" OR subject:"ham radio" OR subject:"medium wave" OR subject:"longwave radio" OR subject:"radio noise" OR subject:"broadcast test" OR subject:"station identification") AND mediatype:audio AND -subject:comedy AND -subject:drama AND -subject:news AND -subject:story AND -subject:episode AND -subject:music AND -subject:song AND -subject:concert AND -subject:"music program" AND -subject:dj AND -subject:podcast AND -title:podcast AND -title:episode';
 
-      const searchUrl = `https://archive.org/advancedsearch.php?q=${encodeURIComponent(searchQuery)}&fl[]=identifier,title&rows=150&page=${Math.floor(Math.random() * 40) + 1}&output=json`;
+      const searchUrl = `https://archive.org/advancedsearch.php?q=${encodeURIComponent(searchQuery)}&fl[]=identifier,title&rows=150&page=${Math.floor(Math.random() * 20) + 1}&output=json`;
       const response = await fetch(searchUrl);
       const data = await response.json();
       const docs = data.response?.docs;
       if (!docs || docs.length === 0) throw new Error("No docs");
 
-      for (let attempt = 0; attempt < 5; attempt++) {
-        const randomDoc = docs[Math.floor(Math.random() * docs.length)];
-        const itemResponse = await fetch(`https://archive.org/metadata/${randomDoc.identifier}`);
-        const itemData = await itemResponse.json();
-        const audioFiles = (itemData.files || []).filter((f: any) =>
-          (f.format === "VBR MP3" || f.format === "MP3" || f.name?.toLowerCase().endsWith(".mp3"))
-          && parseFloat(f.size || "0") > 500000
-        );
-        const audioFile = audioFiles.length > 0
-          ? audioFiles.reduce((best: any, f: any) => parseFloat(f.size || "0") > parseFloat(best.size || "0") ? f : best)
-          : null;
-        if (audioFile) {
+      // Shuffle docs to avoid hitting the same broken ones
+      const shuffled = [...docs].sort(() => Math.random() - 0.5);
+
+      for (let attempt = 0; attempt < Math.min(shuffled.length, 10); attempt++) {
+        try {
+          const randomDoc = shuffled[attempt];
+          const itemResponse = await fetch(`https://archive.org/metadata/${randomDoc.identifier}`);
+          const itemData = await itemResponse.json();
+
+          // Find suitable audio files (MP3 or OGG, over 500KB)
+          const audioFiles = (itemData.files || []).filter((f: any) => {
+            const name = (f.name || "").toLowerCase();
+            const format = (f.format || "").toLowerCase();
+            const size = parseFloat(f.size || "0");
+            const isAudio = format.includes("mp3") || format.includes("vbr mp3")
+              || format.includes("ogg vorbis") || name.endsWith(".mp3") || name.endsWith(".ogg");
+            return isAudio && size > 500000;
+          });
+
+          if (audioFiles.length === 0) continue;
+
+          // Pick the largest file
+          const audioFile = audioFiles.reduce((best: any, f: any) =>
+            parseFloat(f.size || "0") > parseFloat(best.size || "0") ? f : best
+          );
+
+          const audioUrl = `https://archive.org/download/${randomDoc.identifier}/${encodeURIComponent(audioFile.name)}`;
+
+          // Validate the file is actually accessible (CORS check)
+          try {
+            const headResponse = await fetch(audioUrl, { method: "HEAD", mode: "cors" });
+            if (!headResponse.ok) continue;
+          } catch {
+            // CORS blocked — skip this file
+            continue;
+          }
+
           return {
-            url: `https://archive.org/download/${randomDoc.identifier}/${audioFile.name}`,
+            url: audioUrl,
             title: (randomDoc.title || audioFile.name).toUpperCase().substring(0, 30),
             id: randomDoc.identifier,
           };
+        } catch {
+          continue;
         }
       }
-      throw new Error("No MP3 after retries");
+      throw new Error("No playable audio after retries");
     })();
 
     try {
@@ -818,6 +845,14 @@ export default function AmbientMachine() {
                     loop
                     crossOrigin="anonymous"
                     className="hidden"
+                    onError={() => {
+                      console.warn(`Audio failed to load on T${i + 1}: ${ch.audioUrl}`);
+                      setChannels(prev => {
+                        const next = [...prev];
+                        next[i] = { ...next[i], title: "LOAD ERROR — RETRY", isPlaying: false };
+                        return next;
+                      });
+                    }}
                   />
                 )}
               </React.Fragment>
